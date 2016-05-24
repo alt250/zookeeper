@@ -20,6 +20,7 @@ package org.apache.zookeeper.server;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 
 import javax.management.JMException;
 
@@ -40,6 +41,7 @@ public class ZooKeeperServerMain {
         "Usage: ZooKeeperServerMain configfile | port datadir [ticktime] [maxcnxns]";
 
     private ServerCnxnFactory cnxnFactory;
+    private ContainerManager containerManager;
 
     /*
      * Start up the ZooKeeper server.
@@ -109,8 +111,15 @@ public class ZooKeeperServerMain {
             zkServer.setMaxSessionTimeout(config.maxSessionTimeout);
             cnxnFactory = ServerCnxnFactory.createFactory();
             cnxnFactory.configure(config.getClientPortAddress(),
-                    config.getMaxClientCnxns());
+                config.getMaxClientCnxns());
             cnxnFactory.startup(zkServer);
+
+            containerManager = new ContainerManager(zkServer.getZKDatabase(), zkServer.firstProcessor,
+                Integer.getInteger("container.checkIntervalMs", (int) TimeUnit.MINUTES.toMillis(1)),
+                Integer.getInteger("container.maxPerMinute", 10000)
+            );
+            containerManager.start();
+
             cnxnFactory.join();
             if (zkServer.isRunning()) {
                 zkServer.shutdown();
@@ -129,6 +138,7 @@ public class ZooKeeperServerMain {
      * Shutdown the serving instance
      */
     protected void shutdown() {
+        containerManager.stop();
         cnxnFactory.shutdown();
     }
 }

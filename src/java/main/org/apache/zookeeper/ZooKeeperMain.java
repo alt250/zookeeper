@@ -67,7 +67,7 @@ public class ZooKeeperMain {
     static {
         commandMap.put("connect", "host:port");
         commandMap.put("close","");
-        commandMap.put("create", "[-s] [-e] path data acl");
+        commandMap.put("create", "[-s] [-e] [-c] path data acl");
         commandMap.put("delete","path [version]");
         commandMap.put("rmr","path");
         commandMap.put("set","path data [version]");
@@ -688,7 +688,14 @@ public class ZooKeeperMain {
         if (cmd.equals("create") && args.length >= 3) {
             int first = 0;
             CreateMode flags = CreateMode.PERSISTENT;
-            if ((args[1].equals("-e") && args[2].equals("-s"))
+            if (args[1].equals("-c")) {
+                if (args[2].startsWith("-")) {
+                    System.err.println("-c cannot be used with other options");
+                    return false;
+                }
+                first++;
+                flags = CreateMode.CONTAINER;
+            } else if ((args[1].equals("-e") && args[2].equals("-s"))
                     || (args[1]).equals("-s") && (args[2].equals("-e"))) {
                 first+=2;
                 flags = CreateMode.EPHEMERAL_SEQUENTIAL;

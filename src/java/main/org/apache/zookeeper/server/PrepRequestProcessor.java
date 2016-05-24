@@ -35,6 +35,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import org.apache.jute.Record;
 import org.apache.jute.BinaryOutputArchive;
 
+import org.apache.zookeeper.txn.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.CreateMode;
@@ -58,16 +59,6 @@ import org.apache.zookeeper.server.ZooKeeperServer.ChangeRecord;
 import org.apache.zookeeper.server.auth.AuthenticationProvider;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
 import org.apache.zookeeper.server.quorum.Leader.XidRolloverException;
-import org.apache.zookeeper.txn.CreateSessionTxn;
-import org.apache.zookeeper.txn.CreateTxn;
-import org.apache.zookeeper.txn.DeleteTxn;
-import org.apache.zookeeper.txn.ErrorTxn;
-import org.apache.zookeeper.txn.SetACLTxn;
-import org.apache.zookeeper.txn.SetDataTxn;
-import org.apache.zookeeper.txn.CheckVersionTxn;
-import org.apache.zookeeper.txn.Txn;
-import org.apache.zookeeper.txn.MultiTxn;
-import org.apache.zookeeper.txn.TxnHeader;
 
 /**
  * This request processor is generally at the start of a RequestProcessor
@@ -359,7 +350,8 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements
                 } catch (KeeperException.NoNodeException e) {
                     // ignore this one
                 }
-                boolean ephemeralParent = parentRecord.stat.getEphemeralOwner() != 0;
+                boolean ephemeralParent = (parentRecord.stat.getEphemeralOwner() != 0) &&
+                    (parentRecord.stat.getEphemeralOwner() != DataTree.CONTAINER_EPHEMERAL_OWNER);
                 if (ephemeralParent) {
                     throw new KeeperException.NoChildrenForEphemeralsException(path);
                 }
@@ -378,6 +370,77 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements
                 addChangeRecord(new ChangeRecord(request.hdr.getZxid(), path, s,
                         0, listACL));
                 break;
+            case OpCode.createContainer:
+                zks.sessionTracker.checkSession(request.sessionId, request.getOwner());
+                createRequest = (CreateRequest)record;
+                if(deserialize)
+                    ByteBufferInputStream.byteBuffer2Record(request.request, createRequest);
+                path = createRequest.getPath();
+                lastSlash = path.lastIndexOf('/');
+                if (lastSlash == -1 || path.indexOf('\0') != -1 || failCreate) {
+                    LOG.info("Invalid path " + path + " with session 0x" +
+                            Long.toHexString(request.sessionId));
+                    throw new KeeperException.BadArgumentsException(path);
+                }
+                listACL = removeDuplicates(createRequest.getAcl());
+                if (!fixupACL(request.authInfo, listACL)) {
+                    throw new KeeperException.InvalidACLException(path);
+                }
+                parentPath = path.substring(0, lastSlash);
+                parentRecord = getRecordForPath(parentPath);
+
+                checkACL(zks, parentRecord.acl, ZooDefs.Perms.CREATE,
+                        request.authInfo);
+                try {
+                    PathUtils.validatePath(path);
+                } catch(IllegalArgumentException ie) {
+                    LOG.info("Invalid path " + path + " with session 0x" +
+                            Long.toHexString(request.sessionId));
+                    throw new KeeperException.BadArgumentsException(path);
+                }
+                try {
+                    if (getRecordForPath(path) != null) {
+                        throw new KeeperException.NodeExistsException(path);
+                    }
+                } catch (KeeperException.NoNodeException e) {
+                    // ignore this one
+                }
+                ephemeralParent = (parentRecord.stat.getEphemeralOwner() != 0) &&
+                    (parentRecord.stat.getEphemeralOwner() != DataTree.CONTAINER_EPHEMERAL_OWNER);
+                if (ephemeralParent) {
+                    throw new KeeperException.NoChildrenForEphemeralsException(path);
+                }
+                newCversion = parentRecord.stat.getCversion()+1;
+                request.txn = new CreateContainerTxn(path, createRequest.getData(), listACL, newCversion);
+                s = new StatPersisted();
+                parentRecord = parentRecord.duplicate(request.hdr.getZxid());
+                parentRecord.childCount++;
+                parentRecord.stat.setCversion(newCversion);
+                addChangeRecord(parentRecord);
+                addChangeRecord(new ChangeRecord(request.hdr.getZxid(), path, s, 0, listACL));
+                break;
+            case OpCode.deleteContainer:
+                path = new String(request.request.array());
+                lastSlash = path.lastIndexOf('/');
+                if (lastSlash == -1 || path.indexOf('\0') != -1
+                    || zks.getZKDatabase().isSpecialPath(path)) {
+                    throw new KeeperException.BadArgumentsException(path);
+                }
+                parentPath = path.substring(0, lastSlash);
+                parentRecord = getRecordForPath(parentPath);
+                ChangeRecord nodeRecord = getRecordForPath(path);
+                if (nodeRecord.childCount > 0) {
+                    throw new KeeperException.NotEmptyException(path);
+                }
+                if (nodeRecord.stat.getEphemeralOwner() != DataTree.CONTAINER_EPHEMERAL_OWNER) {
+                    throw new KeeperException.BadVersionException(path);
+                }
+                request.txn = new DeleteTxn(path);
+                parentRecord = parentRecord.duplicate(request.hdr.getZxid());
+                parentRecord.childCount--;
+                addChangeRecord(parentRecord);
+                addChangeRecord(new ChangeRecord(request.hdr.getZxid(), path, null, -1, null));
+                break;
             case OpCode.delete:
                 zks.sessionTracker.checkSession(request.sessionId, request.getOwner());
                 DeleteRequest deleteRequest = (DeleteRequest)record;
@@ -391,7 +454,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements
                 }
                 parentPath = path.substring(0, lastSlash);
                 parentRecord = getRecordForPath(parentPath);
-                ChangeRecord nodeRecord = getRecordForPath(path);
+                nodeRecord = getRecordForPath(path);
                 checkACL(zks, parentRecord.acl, ZooDefs.Perms.DELETE,
                         request.authInfo);
                 int version = deleteRequest.getVersion();
@@ -535,12 +598,14 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements
         
         try {
             switch (request.type) {
-                case OpCode.create:
+            case OpCode.create:
+            case OpCode.createContainer:
                 CreateRequest createRequest = new CreateRequest();
                 pRequest2Txn(request.type, zks.getNextZxid(), request, createRequest, true);
                 break;
             case OpCode.delete:
-                DeleteRequest deleteRequest = new DeleteRequest();               
+            case OpCode.deleteContainer:
+                DeleteRequest deleteRequest = new DeleteRequest();
                 pRequest2Txn(request.type, zks.getNextZxid(), request, deleteRequest, true);
                 break;
             case OpCode.setData:

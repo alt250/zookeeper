@@ -768,7 +768,7 @@ public class ZooKeeper {
         final String serverPath = prependChroot(clientPath);
 
         RequestHeader h = new RequestHeader();
-        h.setType(ZooDefs.OpCode.create);
+        h.setType(createMode.isContainer() ? ZooDefs.OpCode.createContainer : ZooDefs.OpCode.create);
         CreateRequest request = new CreateRequest();
         CreateResponse response = new CreateResponse();
         request.setData(data);
@@ -805,7 +805,7 @@ public class ZooKeeper {
         final String serverPath = prependChroot(clientPath);
 
         RequestHeader h = new RequestHeader();
-        h.setType(ZooDefs.OpCode.create);
+        h.setType(createMode.isContainer() ? ZooDefs.OpCode.createContainer : ZooDefs.OpCode.create);
         CreateRequest request = new CreateRequest();
         CreateResponse response = new CreateResponse();
         ReplyHeader r = new ReplyHeader();

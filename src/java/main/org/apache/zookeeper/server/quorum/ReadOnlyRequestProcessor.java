@@ -80,7 +80,9 @@ public class ReadOnlyRequestProcessor extends ZooKeeperCriticalThread implements
                 switch (request.type) {
                 case OpCode.sync:
                 case OpCode.create:
+                case OpCode.createContainer:
                 case OpCode.delete:
+                case OpCode.deleteContainer:
                 case OpCode.setData:
                 case OpCode.setACL:
                 case OpCode.multi:

@@ -251,6 +251,12 @@ module org.apache.zookeeper.txn {
         boolean ephemeral;
         int parentCVersion;
     }
+    class CreateContainerTxn {
+        ustring path;
+        buffer data;
+        vector<org.apache.zookeeper.data.ACL> acl;
+        int parentCVersion;
+    }
     class DeleteTxn {
         ustring path;
     }

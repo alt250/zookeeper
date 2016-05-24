@@ -196,7 +196,11 @@ public class FinalRequestProcessor implements RequestProcessor {
                         case OpCode.create:
                             subResult = new CreateResult(subTxnResult.path);
                             break;
+                        case OpCode.createContainer:
+                            subResult = new CreateResult(subTxnResult.path);
+                            break;
                         case OpCode.delete:
+                        case OpCode.deleteContainer:
                             subResult = new DeleteResult();
                             break;
                         case OpCode.setData:
@@ -214,12 +218,14 @@ public class FinalRequestProcessor implements RequestProcessor {
 
                 break;
             }
+            case OpCode.createContainer:
             case OpCode.create: {
                 lastOp = "CREA";
                 rsp = new CreateResponse(rc.path);
                 err = Code.get(rc.err);
                 break;
             }
+            case OpCode.deleteContainer:
             case OpCode.delete: {
                 lastOp = "DELE";
                 err = Code.get(rc.err);

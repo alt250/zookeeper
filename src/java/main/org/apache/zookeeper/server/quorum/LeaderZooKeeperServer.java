@@ -19,9 +19,11 @@
 package org.apache.zookeeper.server.quorum;
 
 import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.zookeeper.KeeperException.SessionExpiredException;
 import org.apache.zookeeper.jmx.MBeanRegistry;
+import org.apache.zookeeper.server.ContainerManager;
 import org.apache.zookeeper.server.DataTreeBean;
 import org.apache.zookeeper.server.FinalRequestProcessor;
 import org.apache.zookeeper.server.PrepRequestProcessor;
@@ -39,7 +41,11 @@ import org.apache.zookeeper.server.persistence.FileTxnSnapLog;
  * FinalRequestProcessor
  */
 public class LeaderZooKeeperServer extends QuorumZooKeeperServer {
+    private ContainerManager containerManager;  // guarded by sync
+
     CommitProcessor commitProcessor;
+
+    PrepRequestProcessor prepRequestProcessor;
 
     /**
      * @param port
@@ -68,8 +74,10 @@ public class LeaderZooKeeperServer extends QuorumZooKeeperServer {
         ProposalRequestProcessor proposalProcessor = new ProposalRequestProcessor(this,
                 commitProcessor);
         proposalProcessor.initialize();
-        firstProcessor = new PrepRequestProcessor(this, proposalProcessor);
+        firstProcessor = prepRequestProcessor = new PrepRequestProcessor(this, proposalProcessor);
         ((PrepRequestProcessor)firstProcessor).start();
+
+        setupContainerManager();
     }
 
     @Override
@@ -152,7 +160,23 @@ public class LeaderZooKeeperServer extends QuorumZooKeeperServer {
         }
         jmxServerBean = null;
     }
-    
+
+    @Override
+    public synchronized void startup() {
+        super.startup();
+        if (containerManager != null) {
+            containerManager.start();
+        }
+    }
+
+    @Override
+    public synchronized void shutdown() {
+        if (containerManager != null) {
+            containerManager.stop();
+        }
+        super.shutdown();
+    }
+
     @Override
     public String getState() {
         return "leader";
@@ -178,5 +202,12 @@ public class LeaderZooKeeperServer extends QuorumZooKeeperServer {
         } catch (SessionExpiredException e) {
             // this is ok, it just means that the session revalidation failed.
         }
+    }
+
+    private synchronized void setupContainerManager() {
+        containerManager = new ContainerManager(getZKDatabase(), prepRequestProcessor,
+            Integer.getInteger("container.checkIntervalMs", (int) TimeUnit.MINUTES.toMillis(1)),
+            Integer.getInteger("container.maxPerMinute", 10000)
+        );
     }
 }

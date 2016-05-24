@@ -102,7 +102,9 @@ public class Request {
         case OpCode.notification:
             return false;
         case OpCode.create:
+        case OpCode.createContainer:
         case OpCode.delete:
+        case OpCode.deleteContainer:
         case OpCode.createSession:
         case OpCode.exists:
         case OpCode.getData:
@@ -134,8 +136,10 @@ public class Request {
         case OpCode.error:
         case OpCode.closeSession:
         case OpCode.create:
+        case OpCode.createContainer:
         case OpCode.createSession:
         case OpCode.delete:
+        case OpCode.deleteContainer:
         case OpCode.setACL:
         case OpCode.setData:
         case OpCode.check:
@@ -152,10 +156,14 @@ public class Request {
             return "notification";
         case OpCode.create:
             return "create";
+        case OpCode.createContainer:
+            return "createContainer";
         case OpCode.setWatches:
             return "setWatches";
         case OpCode.delete:
             return "delete";
+        case OpCode.deleteContainer:
+            return "deleteContainer";
         case OpCode.exists:
             return "exists";
         case OpCode.getData:

@@ -124,7 +124,9 @@ public class CommitProcessor extends ZooKeeperCriticalThread implements RequestP
                         Request request = queuedRequests.remove();
                         switch (request.type) {
                         case OpCode.create:
+                        case OpCode.createContainer:
                         case OpCode.delete:
+                        case OpCode.deleteContainer:
                         case OpCode.setData:
                         case OpCode.multi:
                         case OpCode.setACL:
