@@ -15,6 +15,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-getent group hadoop 2>/dev/null >/dev/null || /usr/sbin/groupadd -r hadoop
+set -e
 
-/usr/sbin/useradd --comment "ZooKeeper" --shell /bin/bash -M -r --groups hadoop --home /usr/share/zookeeper zookeeper 2> /dev/null || :
+NAME="zookeeper"
+GROUP="hadoop"
+USER=$NAME
+DATADIR="/usr/share/zookeeper"
+
+# shamelessly copied from debian zookeeper package...
+if ! getent group $GROUP >/dev/null ; then
+        # Adding system group
+        addgroup --system $GROUP >/dev/null
+fi
+
+# creating zookeeper user if he isn't already there
+if ! getent passwd $USER >/dev/null ; then
+        # Adding system user
+        adduser \
+          --system \
+          --disabled-login \
+          --ingroup $GROUP \
+          --home $DATADIR \
+          --gecos "ZooKeeper" \
+          --shell /bin/false \
+          $USER  >/dev/null
+fi

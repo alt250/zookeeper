@@ -15,5 +15,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-/usr/sbin/userdel zookeeper 2> /dev/null >/dev/null
+set -e
+
+NAME="zookeeper"
+GROUP="hadoop"
+USER=$NAME
+
+# shamelessly copied from debian zookeeper package...
+#
+# - Remove the zookeeper user only after all his owned files are purged.
+#
+if [ "$1" = "purge" ]; then
+  # we remove the zookeeper user
+  deluser --system $USER || true
+  delgroup --system --only-if-empty $GROUP || true
+fi
+
 exit 0
